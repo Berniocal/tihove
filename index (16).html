@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tíhové zrychlení na Zemi</title>
+
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['\\(','\\)'], ['$', '$']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" defer></script>
+
+<style>
+:root{
+  --bg:#f4f7f5;
+  --panel:#ffffff;
+  --text:#17201a;
+  --muted:#657269;
+  --line:#d9e2dc;
+  --green:#2e8b57;
+  --red:#d94343;
+  --blue:#2f80ed;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+}
+header{text-align:center;padding:18px 12px 8px}
+h1{margin:0;font-size:clamp(22px,4vw,34px)}
+.subtitle{color:var(--muted);margin-top:6px}
+.wrap{
+  max-width:1100px;
+  margin:0 auto;
+  padding:12px;
+  display:grid;
+  grid-template-columns:1.2fr .8fr;
+  gap:14px;
+}
+@media(max-width:850px){.wrap{grid-template-columns:1fr}}
+.card{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:22px;
+  box-shadow:0 12px 28px rgba(0,0,0,.08);
+  padding:14px;
+}
+canvas{
+  width:100%;
+  aspect-ratio:1/1;
+  display:block;
+  border-radius:18px;
+  background:linear-gradient(#eef7ff,#ffffff);
+  border:1px solid var(--line);
+  touch-action:none;
+}
+.controls{display:grid;gap:14px}
+label{font-weight:800}
+input[type=range]{width:100%}
+input[type=number]{
+  width:120px;padding:8px 10px;border:1px solid var(--line);
+  border-radius:12px;font-weight:800;font-size:15px;
+}
+.row{
+  display:flex;justify-content:space-between;
+  gap:12px;align-items:center;
+}
+button{
+  border:0;border-radius:14px;padding:10px 14px;
+  font-weight:900;cursor:pointer;
+  background:#e8efe9;color:var(--text);
+}
+button.active{background:var(--green);color:white}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.legend{display:grid;gap:8px;margin-top:10px}
+.legend div{display:flex;align-items:center;gap:8px}
+.dot{
+  width:16px;height:4px;border-radius:99px;display:inline-block
+}
+.red{background:var(--red)}
+.blue{background:var(--blue)}
+.green{background:var(--green)}
+.result{display:grid;gap:8px;margin-top:10px;font-size:15px}
+details{
+  margin-top:12px;background:#f8fbf9;
+  border:1px solid var(--line);
+  border-radius:16px;padding:10px 12px;
+}
+summary{cursor:pointer;font-weight:900}
+.math{line-height:1.7}
+.small,.note{color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+
+<header>
+<h1>Tíhové zrychlení na Zemi</h1>
+<div class="subtitle">
+Vektory se graficky sčítají:
+\( \vec g = \vec a_g + \vec a_o \)
+</div>
+</header>
+
+<div class="wrap">
+
+<div class="card">
+<canvas id="scene" width="900" height="900"></canvas>
+
+<div class="legend">
+<div><span class="dot red"></span>gravitační zrychlení \( \vec a_g \)</div>
+<div><span class="dot blue"></span>odstředivé zrychlení \( \vec a_o \)</div>
+<div><span class="dot green"></span>výsledné tíhové zrychlení \( \vec g \)</div>
+</div>
+</div>
+
+<div class="card controls">
+
+<div>
+<div class="row">
+<label>Zeměpisná šířka HB</label>
+<input id="latNumber" type="number" min="-90" max="90" step="0.1" value="49">
+</div>
+<input id="lat" type="range" min="-90" max="90" step="0.1" value="49">
+<div class="small">Posuvník nebo ruční zadání.</div>
+</div>
+
+<div>
+<label>Model Země</label>
+<div class="grid2" style="margin-top:8px">
+<button id="sphereBtn" class="active">kulatá Země</button>
+<button id="ellipsoidBtn">skutečný elipsoid</button>
+</div>
+</div>
+
+<div>
+<div class="row">
+<label>Zvětšení vektoru \(a_o\)</label>
+<input id="aoFactorInput" type="number" min="1" max="100" step="1" value="20">
+</div>
+</div>
+
+<div class="result">
+<div>Gravitační zrychlení: <b id="agVal"></b></div>
+<div>Odstředivé zrychlení: <b id="aoVal"></b></div>
+<div>Tíhové zrychlení: <b id="gVal"></b></div>
+</div>
+
+<details open>
+<summary>Rozkliknout výpočty</summary>
+<div class="math" id="calcBox"></div>
+</details>
+
+</div>
+</div>
+
+<script>
+const canvas = document.getElementById("scene");
+const ctx = canvas.getContext("2d");
+
+const latInput = document.getElementById("lat");
+const latNumber = document.getElementById("latNumber");
+const aoFactorInput = document.getElementById("aoFactorInput");
+
+const sphereBtn = document.getElementById("sphereBtn");
+const ellipsoidBtn = document.getElementById("ellipsoidBtn");
+
+const agVal = document.getElementById("agVal");
+const aoVal = document.getElementById("aoVal");
+const gVal = document.getElementById("gVal");
+const calcBox = document.getElementById("calcBox");
+
+let model = "sphere";
+
+const G = 6.67430e-11;
+const M = 5.9722e24;
+const omega = 7.2921159e-5;
+const R = 6371000;
+
+const a = 6378137.0;
+const b = 6356752.314245;
+const e2 = 1 - (b*b)/(a*a);
+
+const gammaE = 9.7803253359;
+const k = 0.00193185265241;
+
+function fmt(x,d=5){
+ return x.toLocaleString("cs-CZ",{
+  minimumFractionDigits:d,
+  maximumFractionDigits:d
+ });
+}
+
+function rad(d){return d*Math.PI/180}
+function deg(r){return r*180/Math.PI}
+
+function surfacePoint(phi){
+ if(model==="sphere"){
+  return {
+   x:R*Math.cos(phi),
+   y:R*Math.sin(phi),
+   r:R
+  };
+ }
+
+ const N = a / Math.sqrt(1 - e2 * Math.sin(phi)**2);
+
+ return {
+  x:N*Math.cos(phi),
+  y:N*(1-e2)*Math.sin(phi),
+  r:Math.hypot(
+   N*Math.cos(phi),
+   N*(1-e2)*Math.sin(phi)
+  )
+ };
+}
+
+function normalGravityEllipsoid(phi){
+ return gammaE *
+ (1 + k*Math.sin(phi)**2) /
+ Math.sqrt(1 - e2*Math.sin(phi)**2);
+}
+
+function compute(){
+
+ const phi = rad(Number(latInput.value));
+
+ const p = surfacePoint(phi);
+
+ const er = {
+  x:p.x/p.r,
+  y:p.y/p.r
+ };
+
+ const rho = Math.abs(p.x);
+
+ const aoMag = omega*omega*rho;
+
+ const ao = {
+  x:aoMag*Math.sign(p.x||1),
+  y:0
+ };
+
+ let agMag;
+
+ if(model==="sphere"){
+  agMag = G*M/(R*R);
+ }else{
+  const gNormal = normalGravityEllipsoid(phi);
+  agMag = gNormal + aoMag*Math.cos(phi);
+ }
+
+ const ag = {
+  x:-agMag*er.x,
+  y:-agMag*er.y
+ };
+
+ const g = {
+  x:ag.x + ao.x,
+  y:ag.y + ao.y
+ };
+
+ const gMag = model==="ellipsoid"
+  ? normalGravityEllipsoid(phi)
+  : Math.hypot(g.x,g.y);
+
+ return {phi,p,agMag,aoMag,gMag,ag,ao,g};
+}
+
+function drawArrow(from,v,color,label){
+
+ const to = {
+  x:from.x + v.x,
+  y:from.y - v.y
+ };
+
+ ctx.strokeStyle=color;
+ ctx.fillStyle=color;
+ ctx.lineWidth=5;
+ ctx.lineCap="round";
+
+ ctx.beginPath();
+ ctx.moveTo(from.x,from.y);
+ ctx.lineTo(to.x,to.y);
+ ctx.stroke();
+
+ const head=16;
+ const angle=Math.atan2(from.y-to.y,to.x-from.x);
+
+ ctx.beginPath();
+ ctx.moveTo(to.x,to.y);
+ ctx.lineTo(
+  to.x-head*Math.cos(angle-Math.PI/6),
+  to.y+head*Math.sin(angle-Math.PI/6)
+ );
+ ctx.lineTo(
+  to.x-head*Math.cos(angle+Math.PI/6),
+  to.y+head*Math.sin(angle+Math.PI/6)
+ );
+ ctx.closePath();
+ ctx.fill();
+
+ ctx.font="bold 24px system-ui";
+ ctx.fillText(label,to.x+8,to.y-8);
+}
+
+function dashed(a,b){
+ ctx.save();
+ ctx.strokeStyle="rgba(0,0,0,.25)";
+ ctx.setLineDash([7,7]);
+ ctx.beginPath();
+ ctx.moveTo(a.x,a.y);
+ ctx.lineTo(b.x,b.y);
+ ctx.stroke();
+ ctx.restore();
+}
+
+function draw(){
+
+ const data = compute();
+ const aoFactor = Number(aoFactorInput.value)||1;
+
+ ctx.clearRect(0,0,canvas.width,canvas.height);
+
+ const cx = canvas.width/2;
+ const cy = canvas.height/2;
+
+ const earthScale = 330/a;
+
+ ctx.save();
+ ctx.translate(cx,cy);
+
+ ctx.strokeStyle="#555";
+ ctx.setLineDash([10,8]);
+ ctx.beginPath();
+ ctx.moveTo(0,-390);
+ ctx.lineTo(0,390);
+ ctx.stroke();
+ ctx.setLineDash([]);
+
+ ctx.fillStyle="#dbe8df";
+ ctx.strokeStyle="#9bad9f";
+ ctx.lineWidth=5;
+
+ ctx.beginPath();
+
+ if(model==="sphere"){
+  ctx.arc(0,0,R*earthScale,0,Math.PI*2);
+ }else{
+  ctx.ellipse(0,0,a*earthScale,b*earthScale,0,0,Math.PI*2);
+ }
+
+ ctx.fill();
+ ctx.stroke();
+
+ const px = data.p.x*earthScale;
+ const py = -data.p.y*earthScale;
+
+ ctx.fillStyle="#111";
+ ctx.beginPath();
+ ctx.arc(px,py,9,0,Math.PI*2);
+ ctx.fill();
+
+ ctx.font="bold 28px system-ui";
+ ctx.fillText("HB",px+12,py-12);
+
+ ctx.restore();
+
+ const start = {
+  x:cx + data.p.x*earthScale,
+  y:cy - data.p.y*earthScale
+ };
+
+ const base = 28;
+
+ const agPx = {
+  x:data.ag.x*base,
+  y:data.ag.y*base
+ };
+
+ const aoPx = {
+  x:data.ao.x*base*aoFactor,
+  y:data.ao.y*base*aoFactor
+ };
+
+ const gPx = {
+  x:agPx.x + aoPx.x,
+  y:agPx.y + aoPx.y
+ };
+
+ const endAg = {
+  x:start.x + agPx.x,
+  y:start.y - agPx.y
+ };
+
+ const endAo = {
+  x:start.x + aoPx.x,
+  y:start.y - aoPx.y
+ };
+
+ const endSum = {
+  x:endAg.x + aoPx.x,
+  y:endAg.y - aoPx.y
+ };
+
+ dashed(endAg,endSum);
+ dashed(endAo,endSum);
+
+ drawArrow(start,agPx,"#d94343","a_g");
+ drawArrow(start,aoPx,"#2f80ed","a_o");
+ drawArrow(start,gPx,"#2e8b57","g");
+
+ updateText(data,aoFactor);
+}
+
+function updateText(data,aoFactor){
+
+ agVal.textContent = fmt(data.agMag)+" m·s⁻²";
+ aoVal.textContent = fmt(data.aoMag)+" m·s⁻²";
+ gVal.textContent = fmt(data.gMag)+" m·s⁻²";
+
+ calcBox.innerHTML = `
+ <p>
+ \\[
+ \\vec g = \\vec a_g + \\vec a_o
+ \\]
+ </p>
+
+ <p>
+ \\[
+ a_o = \\omega^2 \\rho
+ \\]
+ </p>
+
+ <p>
+ \\[
+ a_o = ${fmt(data.aoMag)}\\ \\mathrm{m\\cdot s^{-2}}
+ \\]
+ </p>
+
+ <p>
+ \\[
+ a_g = ${fmt(data.agMag)}\\ \\mathrm{m\\cdot s^{-2}}
+ \\]
+ </p>
+
+ <p>
+ \\[
+ g = ${fmt(data.gMag)}\\ \\mathrm{m\\cdot s^{-2}}
+ \\]
+ </p>
+
+ <p>
+ \\[
+ \\vec g_{graf.} =
+ \\vec a_g + ${aoFactor}\\cdot \\vec a_o
+ \\]
+ </p>
+ `;
+
+ if(window.MathJax && MathJax.typesetPromise){
+  MathJax.typesetPromise([calcBox]).catch(()=>{});
+ }
+}
+
+function sync(){
+ let v = Number(latInput.value);
+ latNumber.value = v;
+ draw();
+}
+
+function syncNum(){
+ let v = Number(latNumber.value);
+ if(v>90)v=90;
+ if(v<-90)v=-90;
+ latInput.value=v;
+ latNumber.value=v;
+ draw();
+}
+
+latInput.addEventListener("input",sync);
+latNumber.addEventListener("input",syncNum);
+aoFactorInput.addEventListener("input",draw);
+
+sphereBtn.addEventListener("click",()=>{
+ model="sphere";
+ sphereBtn.classList.add("active");
+ ellipsoidBtn.classList.remove("active");
+ draw();
+});
+
+ellipsoidBtn.addEventListener("click",()=>{
+ model="ellipsoid";
+ ellipsoidBtn.classList.add("active");
+ sphereBtn.classList.remove("active");
+ draw();
+});
+
+draw();
+</script>
+
+</body>
+</html>
